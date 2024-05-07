@@ -1,6 +1,7 @@
 package data
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"time"
@@ -48,15 +49,12 @@ func (m MovieModel) Insert(movie *Movie) error {
 	VALUES ($1, $2, $3, $4)
 	RETURNING id, created_at, version`
 
-	// Create an args slice containing the values for the placeholder parameters from
-	// the movie struct. Declaring this slice immediately next to our SQL query helps to
-	// make it nice and clear *what values are being used where* in the query.
 	args := []any{movie.Title, movie.Year, movie.Runtime, pq.Array(movie.Genres)}
 
-	// Use the QueryRow() method to execute the SQL query on our connection pool,
-	// passing in the args slice as a variadic parameter and scanning the system-
-	// generated id, created_at and version values into the movie struct.
-	return m.DB.QueryRow(query, args...).Scan(&movie.ID, &movie.CreatedAt, &movie.Version)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	return m.DB.QueryRowContext(ctx, query, args...).Scan(&movie.ID, &movie.CreatedAt, &movie.Version)
 
 }
 
@@ -75,11 +73,11 @@ func (m MovieModel) Get(id int64) (*Movie, error) {
 	// Declare a Movie struct to hold the data returned by the query.
 	var movie Movie
 
-	// Execute the query using the QueryRow() method, passing in the provided id value
-	// as a placeholder parameter, and scan the response data into the fields of the
-	// Movie struct. Importantly, notice that we need to convert the scan target for the
-	// genres column using the pq.Array() adapter function again.
-	err := m.DB.QueryRow(query, id).Scan(
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+
+	defer cancel()
+
+	err := m.DB.QueryRowContext(ctx, query, id).Scan(
 		&movie.ID,
 		&movie.CreatedAt,
 		&movie.Title,
@@ -89,9 +87,6 @@ func (m MovieModel) Get(id int64) (*Movie, error) {
 		&movie.Version,
 	)
 
-	// Handle any errors. If there was no matching movie found, Scan() will return
-	// a sql.ErrNoRows error. We check for this and return our custom ErrRecordNotFound
-	// error instead.
 	if err != nil {
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
@@ -101,7 +96,6 @@ func (m MovieModel) Get(id int64) (*Movie, error) {
 		}
 	}
 
-	// Otherwise, return a pointer to the Movie struct.
 	return &movie, nil
 
 }
@@ -117,18 +111,29 @@ func (m MovieModel) Update(movie *Movie) error {
 	RETURNING version
 	`
 
-	// Create an args slice containing the values for the placeholder parameters.
 	args := []any{
 		movie.Title,
 		movie.Year,
 		movie.Runtime,
 		pq.Array(movie.Genres),
 		movie.ID,
+		movie.Version, // Add the expected movie version.
 	}
 
-	// Use the QueryRow() method to execute the query, passing in the args slice as a
-	// variadic parameter and scanning the new version value into the movie struct.
-	return m.DB.QueryRow(query, args...).Scan(&movie.Version)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	err := m.DB.QueryRowContext(ctx, query, args...).Scan(&movie.Version)
+	if err != nil {
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			return ErrEditConflict
+		default:
+			return err
+		}
+	}
+
+	return nil
 
 }
 
@@ -144,10 +149,10 @@ func (m MovieModel) Delete(id int64) error {
         DELETE FROM movies
         WHERE id = $1`
 
-	// Execute the SQL query using the Exec() method, passing in the id variable as
-	// the value for the placeholder parameter. The Exec() method returns a sql.Result
-	// object.
-	result, err := m.DB.Exec(query, id)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	result, err := m.DB.ExecContext(ctx, query, id)
 	if err != nil {
 		return err
 	}
