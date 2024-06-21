@@ -1,0 +1,23 @@
+// migrations
+
+sudo  migrate -path=./migrations -database=$GREENLIGHT_DB_DSN up 
+
+// ENV
+
+export GREENLIGHT_DB_DSN='postgres://inzimam:pa55word@localhost/movievault?sslmode=disable'
+
+//RUN
+
+ go run ./cmd/api 
+
+ // migrate version
+
+ migrate -path=./migrations -database=$GREENLIGHT_DB_DSN version
+
+// migrate up or down
+
+ migrate -path=./migrations -database=$GREENLIGHT_DB_DSN goto 1
+
+ // for migrate database
+
+ migrate -path=./migrations -database=$GREENLIGHT_DB_DSN force 1
